@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package io.stackgres.stream.jobs.cloudevent;
+package io.stackgres.stream.jobs.migration;
 
 import io.stackgres.stream.jobs.AbstractStreamJob;
 import io.stackgres.stream.jobs.StateHandler;
@@ -13,11 +13,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 @ApplicationScoped
-@StreamTargetOperation("CloudEvent")
-public class StreamCloudEventJob extends AbstractStreamJob {
+@StreamTargetOperation("SGCluster")
+public class StreamMigrationClusterJob extends AbstractStreamJob {
 
   @Inject
-  public StreamCloudEventJob(@StateHandler("CloudEvent") StreamEventStateHandler stateHandler) {
+  public StreamMigrationClusterJob(@StateHandler("SGCluster") StreamEventStateHandler stateHandler) {
     super(stateHandler);
   }
 

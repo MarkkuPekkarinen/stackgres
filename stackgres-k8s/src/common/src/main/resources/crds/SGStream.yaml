@@ -57,6 +57,7 @@ spec:
                       The type of data source. Available data source types are:
                       
                       * `SGCluster`: an SGCluster in the same namespace
+                      * `Postgres`: any Postgres instance
                   sgCluster:
                     type: object
                     description: |
@@ -67,13 +68,13 @@ spec:
                         type: string
                         description: |
                           The target SGCluster name.
-                      database:
+                      database: &source-postgres-database
                         type: string
                         description: |
                           The target database name to which the CDC process will connect to.
                           
                           If not specified the default postgres database will be targeted.
-                      username:
+                      username: &source-username
                         type: object
                         description: |
                           The username used by the CDC process to connect to the database.
@@ -89,7 +90,7 @@ spec:
                             type: string
                             description: |
                               The Secret key where the username is stored.
-                      password:
+                      password: &source-password
                         type: object
                         description: |
                           The password used by the CDC process to connect to the database.
@@ -105,7 +106,7 @@ spec:
                             type: string
                             description: |
                               The Secret key where the password is stored.
-                      includes:
+                      includes: &source-includes
                         type: array
                         description: |
                           A list of regular expressions that allow to match one or more `<database>.<schema>.<table>.<column>` entries to be filtered before sending to the target.
@@ -115,7 +116,7 @@ spec:
                           type: string
                           description: |
                             A regular expressions that allow to match one or more `<database>.<schema>.<table>.<column>` entries to be filtered before sending to the target.
-                      excludes:
+                      excludes: &source-excludes
                         type: array
                         description: |
                           A list of regular expressions that allow to match one or more `<database>.<schema>.<table>.<column>` entries to be filtered out before sending to the target.
@@ -125,10 +126,10 @@ spec:
                           type: string
                           description: |
                             A regular expressions that allow to match one or more `<database>.<schema>.<table>.<column>` entries to be filtered out before sending to the target.
-                      debeziumConnectorProperties:
+                      debeziumProperties: &source-postgres-debeziumProperties
                         type: object
                         description: |
-                          Specific property of the debezium connector.
+                          Specific property of the debezium Postgres connector.
                           
                           See https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-connector-properties
                           
@@ -148,7 +149,7 @@ spec:
                             type: boolean
                             description: |
                               Default false. Whether or not to delete the logical replication slot when the connector stops in a graceful, expected way. The default behavior is that the replication slot remains configured for the connector when the connector stops. When the connector restarts, having the same replication slot enables the connector to start processing where it left off. Set to true in only testing or development environments. Dropping the slot allows the database to discard WAL segments. When the connector restarts it performs a new snapshot or it can continue from a persistent offset in the Kafka Connect offsets topic.
-                          pubblicationName:
+                          publicationName:
                             type: string
                             description: |
                               Default <SGStream name>. The name of the PostgreSQL publication created for streaming changes when using pgoutput. This publication is created at start-up if it does not already exist and it includes all tables. Debezium then applies its own include/exclude list filtering, if configured, to limit the publication to change events for the specific tables of interest. The connector user must have superuser permissions to create this publication, so it is usually preferable to create the publication before starting the connector for the first time. If the publication already exists, either for all tables or configured with a subset of tables, Debezium uses the publication as it is defined.
@@ -582,7 +583,7 @@ spec:
                               type: string
                             description: |
                               Default t. A list of operation types that will be skipped during streaming. The operations include: c for inserts/create, u for updates, d for deletes, t for truncates, and none to not skip any operations. By default, truncate operations are skipped.
-                          dataCollection:
+                          signalDataCollection:
                             type: string
                             description: |
                               Fully-qualified name of the data collection that is used to send signals to the connector. Use the following format to specify the collection name: <schemaName>.<tableName>
@@ -661,6 +662,26 @@ spec:
                               * `-1`: No limit. The connector always restarts automatically, and retries the operation, regardless of the number of previous failures.
                               * `0`: Disabled. The connector fails immediately, and never retries the operation. User intervention is required to restart the connector.
                               * `> 0`: The connector restarts automatically until it reaches the specified maximum number of retries. After the next failure, the connector stops, and user intervention is required to restart it.
+                  postgres:
+                    type: object
+                    description: |
+                      The configuration of the data source required when type is `Postgres`.
+                    required: ["host"]
+                    properties:
+                      host:
+                        type: string
+                        description: |
+                          The hostname of the Postgres instance.
+                      port:
+                        type: integer
+                        description: |
+                          The port of the Postgres instance. When not specified port 5432 will be used.
+                      database: *source-postgres-database
+                      username: *source-username
+                      password: *source-password
+                      includes: *source-includes
+                      excludes: *source-excludes
+                      debeziumProperties: *source-postgres-debeziumProperties
               target:
                 type: object
                 description: |
@@ -673,6 +694,7 @@ spec:
                       Indicate the type of target of this stream. Possible values are:
                       
                       * `CloudEvent`: events will be sent to a cloud event receiver.
+                      * `SGCluster`: events will be sinked to an SGCluster allowing migration of data.
                   cloudEvent:
                     type: object
                     description: |
@@ -729,6 +751,160 @@ spec:
                           skipHostnameVerification:
                             type: boolean
                             description: When `true` disable hostname verification.
+                  sgCluster:
+                    type: object
+                    description: |
+                      The configuration of the data target required when type is `SGCluster`.
+                    required: ["name"]
+                    properties:
+                      name:
+                        type: string
+                        description: |
+                          The target SGCluster name.
+                      database: &target-postgres-database
+                        type: string
+                        description: |
+                          The target database name to which the data will be migrated to.
+                          
+                          If not specified the default postgres database will be targeted.
+                      username: &target-username
+                        type: object
+                        description: |
+                          The username used by the CDC sink process to connect to the database.
+                          
+                          If not specified the default superuser username (by default postgres) will be used.
+                        required: ["name", "key"]
+                        properties:
+                          name:
+                            type: string
+                            description: |
+                              The Secret name where the username is stored.
+                          key:
+                            type: string
+                            description: |
+                              The Secret key where the username is stored.
+                      password: &target-password
+                        type: object
+                        description: |
+                          The password used by the CDC sink process to connect to the database.
+                          
+                          If not specified the default superuser password will be used.
+                        required: ["name", "key"]
+                        properties:
+                          name:
+                            type: string
+                            description: |
+                              The Secret name where the password is stored.
+                          key:
+                            type: string
+                            description: |
+                              The Secret key where the password is stored.
+                      debeziumProperties: &target-jdbc-debeziumProperties
+                        type: object
+                        description: |
+                          Specific property of the debezium JDBC sink.
+                          
+                          See https://debezium.io/documentation/reference/stable/connectors/jdbc.html#jdbc-connector-configuration
+                          
+                          Each property is converted from myPropertyName to my.property.name
+                        properties:
+                          connectionPoolMin_size:
+                            type: integer
+                            description: |
+                              Default `5`. Specifies the minimum number of connections in the pool.
+                          connectionPoolMax_size:
+                            type: integer
+                            description: |
+                              Default `32`. Specifies the maximum number of concurrent connections that the pool maintains.
+                          connectionPoolAcquire_increment: 
+                            type: integer
+                            description: |
+                              Default `32`. Specifies the number of connections that the connector attempts to acquire if the connection pool exceeds its maximum size.
+                          connectionPoolTimeout:
+                            type: integer
+                            description: |
+                              Default `1800`. Specifies the number of seconds that an unused connection is kept before it is discarded.
+                          databaseTime_zone:
+                            type: string
+                            description: |
+                              Default `UTC`. Specifies the timezone used when inserting JDBC temporal values.
+                          deleteEnabled:
+                            type: boolean
+                            description: |
+                              Default `false`. Specifies whether the connector processes DELETE or tombstone events and removes the corresponding row from the database. Use of this option requires that you set the `primaryKeyMode` to `record_key`.
+                          truncateEnabled:
+                            type: boolean
+                            description: |
+                              Default `false`. Specifies whether the connector processes TRUNCATE events and truncates the corresponding tables from the database.
+                              Although support for TRUNCATE statements has been available in Db2 since version 9.7, currently, the JDBC connector is unable to process standard TRUNCATE events that the Db2 connector emits.
+                              To ensure that the JDBC connector can process TRUNCATE events received from Db2, perform the truncation by using an alternative to the standard TRUNCATE TABLE statement. For example:
+                              
+                              ```
+                              ALTER TABLE <table_name> ACTIVATE NOT LOGGED INITIALLY WITH EMPTY TABLE
+                              ```
+                              
+                              The user account that submits the preceding query requires ALTER privileges on the table to be truncated.
+                          insertMode:
+                            type: string
+                            description: |
+                              Default `insert`. Specifies the strategy used to insert events into the database. The following options are available:
+                              * `insert`: Specifies that all events should construct INSERT-based SQL statements. Use this option only when no primary key is used, or when you can be certain that no updates can occur to rows with existing primary key values.
+                              * `update`: Specifies that all events should construct UPDATE-based SQL statements. Use this option only when you can be certain that the connector receives only events that apply to existing rows.
+                              * `upsert`: Specifies that the connector adds events to the table using upsert semantics. That is, if the primary key does not exist, the connector performs an INSERT operation, and if the key does exist, the connector performs an UPDATE operation. When idempotent writes are required, the connector should be configured to use this option.
+                          primaryKeyMode:
+                            type: string
+                            description: |
+                              Default `auto`. Specifies how the connector resolves the primary key columns from the event.
+                              * `none`: Specifies that no primary key columns are created.
+                              * `record_key`: Specifies that the primary key columns are sourced from the event’s record key. If the record key is a primitive type, the `primaryKeyFields` property is required to specify the name of the primary key column. If the record key is a struct type, the `primaryKeyFields` property is optional, and can be used to specify a subset of columns from the event’s key as the table’s primary key.
+                              * `record_value`: Specifies that the primary key columns is sourced from the event’s value. You can set the `primaryKeyFields` property to define the primary key as a subset of fields from the event’s value; otherwise all fields are used by default.
+                          primaryKeyFields:
+                            type: array
+                            description: |
+                              Either the name of the primary key column or a comma-separated list of fields to derive the primary key from.
+                              When `primaryKeyMode` is set to `record_key` and the event’s key is a primitive type, it is expected that this property specifies the column name to be used for the key.
+                              When the `primaryKeyMode` is set to `record_key` with a non-primitive key, or record_value, it is expected that this property specifies a comma-separated list of field names from either the key or value. If the primary.key.mode is set to record_key with a non-primitive key, or record_value, and this property is not specifies, the connector derives the primary key from all fields of either the record key or record value, depending on the specified mode.
+                            items:
+                              type: string
+                          quoteIdentifiers:
+                            type: boolean
+                            description: |
+                              Default `false`. Specifies whether generated SQL statements use quotation marks to delimit table and column names. See the Quoting and case sensitivity section for more details.
+                          schemaEvolution:
+                            type: string
+                            description: |
+                              Default `none`. Specifies how the connector evolves the destination table schemas. For more information, see Schema evolution. The following options are available:
+                              `none`: Specifies that the connector does not evolve the destination schema.
+                              `basic`: Specifies that basic evolution occurs. The connector adds missing columns to the table by comparing the incoming event’s record schema to the database table structure.
+                          tableNameFormat:
+                            type: string
+                            description: |
+                              Default ${topic}. Specifies a string that determines how the destination table name is formatted, based on the topic name of the event. The placeholder, ${topic}, is replaced by the topic name. The topic name is composed by the SGStream namespace and name joined by a point character (`.`).
+                          dialectPostgresPostgisSchema:
+                            type: string
+                            description: |
+                              Default `public`. Specifies the schema name where the PostgreSQL PostGIS extension is installed. The default is `public`; however, if the PostGIS extension was installed in another schema, this property should be used to specify the alternate schema name.
+                          dialectSqlserverIdentityInsert:
+                            type: boolean
+                            description: |
+                              Default `false`. Specifies whether the connector automatically sets an IDENTITY_INSERT before an INSERT or UPSERT operation into the identity column of SQL Server tables, and then unsets it immediately after the operation. When the default setting (`false`) is in effect, an INSERT or UPSERT operation into the IDENTITY column of a table results in a SQL exception.
+                          batchSize:
+                            type: integer
+                            description: |
+                              Default `500`. Specifies how many records to attempt to batch together into the destination table.
+                              > Note that if you set `consumerMaxPollRecords` in the Connect worker properties to a value lower than `batchSize`, batch processing will be caped by `consumerMaxPollRecords` and the desired `batchSize` won’t be reached. You can also configure the connector’s underlying consumer’s `maxPollRecords` using `consumerOverrideMaxPollRecords` in the connector configuration.
+                          columnNamingStrategy:
+                            type: string
+                            description: |
+                              Default `i.d.c.j.n.DefaultColumnNamingStrategy`. Specifies the fully-qualified class name of a ColumnNamingStrategy implementation that the connector uses to resolve column names from event field names.
+                              By default, the connector uses the field name as the column name.
+                          tableNamingStrategy:
+                            type: string
+                            description: |
+                              Default `i.d.c.j.n.DefaultTableNamingStrategy`. Specifies the fully-qualified class name of a TableNamingStrategy implementation that the connector uses to resolve table names from incoming event topic names.
+                              The default behavior is to:
+                              * Replace the ${topic} placeholder in the `tableNameFormat` configuration property with the event’s topic.
+                              * Sanitize the table name by replacing dots (`.`) with underscores (`_`).
               maxRetries:
                 type: integer
                 description: |
@@ -830,6 +1006,63 @@ spec:
                     type: integer
                     description: |
                       Default 10000. Max delay (in ms) between retries when encountering conn
+                  transforms:
+                    type: object
+                    description: |
+                      Before the messages are delivered to the handler it is possible to run them through a pipeline of Kafka Connect Simple Message Transforms (SMT). Each SMT can pass the message unchanged, modify it or filter it out. The chain is configured using property transforms. The property contains a list of logical names of the transformations to be applied (the specified keys). Properties transforms.<logical_name>.type then defines the name of the implementation class for each transformation and transforms.<logical_name>.* configuration options that are passed to the transformation.
+
+                      An example of the configuration is:
+
+                      ```
+                      transforms: # (1)
+                        router:
+                          type: "org.apache.kafka.connect.transforms.RegexRouter" # (2)
+                          regex: "(.*)" # (3)
+                          replacement: "trf$1" # (3)
+                        filter:
+                          type: "io.debezium.embedded.ExampleFilterTransform" # (4)
+                      ```
+
+                      1. Two transformations are defined - filter and router
+                      2. Implementation of the router transformation is org.apache.kafka.connect.transforms.RegexRouter
+                      3. The router transformation has two configurations options -regex and replacement
+                      4. Implementation of the filter transformation is io.debezium.embedded.ExampleFilterTransform
+                    additionalProperties:
+                      type: object
+                      description: The properties of this transformation.
+                      additionalProperties:
+                        type: string
+                  predicates:
+                    type: object
+                    description: |
+                      Predicates can be applied to transformations to make the transformations optional.
+
+                      An example of the configuration is:
+
+                      ```
+                      predicates:
+                        headerExists: # (1)
+                         type: "org.apache.kafka.connect.transforms.predicates.HasHeaderKey" # (2)
+                         name: "header.name" # (3)
+                      transforms:
+                        filter: # (4)
+                          type: "io.debezium.embedded.ExampleFilterTransform" # (5)
+                          predicate: "headerExists" # (6)
+                          negate: "true" # (7)
+                      ```
+
+                      1. One predicate is defined - headerExists
+                      2. Implementation of the headerExists predicate is org.apache.kafka.connect.transforms.predicates.HasHeaderKey
+                      3. The headerExists predicate has one configuration option - name
+                      4. One transformation is defined - filter
+                      5. Implementation of the filter transformation is io.debezium.embedded.ExampleFilterTransform
+                      6. The filter transformation requires the predicate headerExists
+                      7. The filter transformation expects the value of the predicate to be negated, making the predicate determine if the header does not exist
+                    additionalProperties:
+                      type: object
+                      description: The properties of this predicate.
+                      additionalProperties:
+                        type: string
           status:
             type: object
             description: |

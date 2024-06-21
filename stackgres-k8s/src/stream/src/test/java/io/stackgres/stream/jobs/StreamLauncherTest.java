@@ -22,8 +22,6 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
-import io.fabric8.kubernetes.api.model.ObjectMeta;
-import io.fabric8.kubernetes.api.model.Pod;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.mockito.InjectSpy;
@@ -31,12 +29,9 @@ import io.smallrye.mutiny.Uni;
 import io.stackgres.common.crd.sgcluster.StackGresCluster;
 import io.stackgres.common.crd.sgstream.StackGresStream;
 import io.stackgres.common.crd.sgstream.StackGresStreamStatus;
-import io.stackgres.common.crd.sgstream.StreamSourceType;
 import io.stackgres.common.crd.sgstream.StreamStatusCondition;
-import io.stackgres.common.crd.sgstream.StreamTargetType;
 import io.stackgres.common.fixture.Fixtures;
 import io.stackgres.stream.jobs.cloudevent.StreamCloudEventJob;
-import io.stackgres.stream.jobs.cloudevent.StreamEventState;
 import io.stackgres.stream.jobs.lock.LockAcquirer;
 import io.stackgres.stream.jobs.lock.LockRequest;
 import io.stackgres.stream.jobs.lock.MockKubeDb;
@@ -101,18 +96,8 @@ class StreamLauncherTest {
     doNothing().when(streamEventEmitter).streamTimedOut(randomStreamName, namespace);
   }
 
-  private CompletableFuture<StreamEventState> getStreamEventStateCompletableFuture() {
-    Pod primary = new Pod();
-    primary.setMetadata(new ObjectMeta());
-    primary.getMetadata().setName(stream.getMetadata().getName() + "-0");
-    return CompletableFuture.completedFuture(
-        StreamEventState.builder()
-            .namespace(stream.getMetadata().getNamespace())
-            .streamName(stream.getMetadata().getName())
-            .streamOperation(new StreamTargetOperationLiteral(stream.getSpec().getTarget().getType()))
-            .sourceType(StreamSourceType.fromString(stream.getSpec().getSource().getType()))
-            .targetType(StreamTargetType.fromString(stream.getSpec().getTarget().getType()))
-            .build());
+  private CompletableFuture<Void> getStreamEventStateCompletableFuture() {
+    return CompletableFuture.completedFuture(null);
   }
 
   @Test
